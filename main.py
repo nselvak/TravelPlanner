@@ -1,6 +1,6 @@
 ﻿
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from pathlib import Path
 
 DB_PATH = Path(__file__).with_name("travel.db")
@@ -56,6 +56,71 @@ def initialise_database():
         """)        
 
 
+####################################
+# Validation 
+####################################
+
+def normalize_time(value):
+    """Accept common time formats and return HH:MM.
+
+    Examples:
+        2350 -> 23:50
+        930  -> 09:30
+        9    -> 09:00
+
+    Returns an empty string for blank input and None for invalid input.
+    """
+    value = value.strip()
+
+    if not value:
+        return ""
+
+    try:
+        if ":" in value:
+            # Accept formats such as 9:30 and 09:30.
+            parts = value.split(":")
+
+            if (
+                len(parts) != 2
+                or not parts[0].isdigit()
+                or len(parts[0]) not in (1, 2)
+                or not parts[1].isdigit()
+                or len(parts[1]) != 2
+            ):
+                return None
+
+            hour = int(parts[0])
+            minute = int(parts[1])
+
+        elif value.isdigit():
+            # Compact formats: 9, 09, 930, 0930, 2350.
+            if len(value) <= 2:
+                hour = int(value)
+                minute = 0
+            elif len(value) == 3:
+                hour = int(value[0])
+                minute = int(value[1:])
+            elif len(value) == 4:
+                hour = int(value[:2])
+                minute = int(value[2:])
+            else:
+                return None
+        else:
+            return None
+
+        normalised = f"{hour:02d}:{minute:02d}"
+
+        # Reject impossible times such as 25:90 or 24:00.
+        return datetime.strptime(normalised, "%H:%M").strftime("%H:%M")
+
+    except ValueError:
+        return None
+
+
+
+####################################
+# Actual Functions
+####################################
 def create_trip():
     name = input("Trip name: ").strip()
 
@@ -175,6 +240,7 @@ def view_itinerary():
 
     for day in days:
         print(f"\n--- {day['day_date']} ---")
+        daily_total = 0.0
 
         if day["notes"]:
             print(f"Notes: {day['notes']}")
@@ -194,10 +260,12 @@ def view_itinerary():
             location = activity["location"] or "Location TBD"
             cost = activity["estimated_cost"]
             total_cost += cost
+            daily_total += cost
 
             print(f"  ID {activity['id']} | {time} | {activity['name']}")
             print(f"    Location: {location}")
             print(f"    Estimated cost: {cost:.2f}")
+            print(f"  Daily activity total: {daily_total:.2f}")
 
             if activity["notes"]:
                 print(f"    Notes: {activity['notes']}")
@@ -251,7 +319,19 @@ def add_activity():
         print("Activity name cannot be empty.")
         return
 
-    start_time = input("Start time (HH:MM, optional): ").strip()
+    start_time_input = input(
+        "Start time (e.g. 930, 2350, or 09:30): "
+    )
+    # noramlizing time
+    start_time = normalize_time(start_time_input)
+
+    if start_time is None:
+        print("Invalid time. Try 930, 2350, or 09:30.")
+        return
+
+    if start_time:
+        print(f"Interpreted time: {start_time}")
+    
     location = input("Location (optional): ").strip()
     cost_text = input("Estimated cost (default 0): ").strip()
     notes = input("Notes (optional): ").strip()
@@ -311,9 +391,21 @@ def edit_activity():
     print("Press Enter to keep the current value.")
 
     name = input(f"Name [{activity['name']}]: ").strip()
-    start_time = input(
+    start_time_input = input(
         f"Start time [{activity['start_time'] or ''}]: "
+        " "
     ).strip()
+
+    if start_time_input:
+        start_time = normalize_time(start_time_input)
+
+        if start_time is None:
+            print("Invalid time. Try 930, 2350, or 09:30.")
+            return
+    else:
+        # Enter keeps the existing time.
+        start_time = activity["start_time"]
+
     location = input(
         f"Location [{activity['location'] or ''}]: "
     ).strip()
