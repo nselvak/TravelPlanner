@@ -152,6 +152,7 @@ def view_itinerary():
         activities = connection.execute(
             """
             SELECT
+                a.id,
                 a.itinerary_day_id,
                 a.name,
                 a.start_time,
@@ -194,7 +195,7 @@ def view_itinerary():
             cost = activity["estimated_cost"]
             total_cost += cost
 
-            print(f"  {time} | {activity['name']}")
+            print(f"  ID {activity['id']} | {time} | {activity['name']}")
             print(f"    Location: {location}")
             print(f"    Estimated cost: {cost:.2f}")
 
@@ -284,6 +285,118 @@ def add_activity():
 
     print("Activity added successfully.")
 
+    
+def edit_activity():
+    try:
+        activity_id = int(input("Activity ID to edit: ").strip())
+    except ValueError:
+        print("Please enter a valid activity ID.")
+        return
+
+    with connect_db() as connection:
+        activity = connection.execute(
+            """
+            SELECT id, name, start_time, location, estimated_cost, notes
+            FROM activities
+            WHERE id = ?
+            """,
+            (activity_id,),
+        ).fetchone()
+
+    if activity is None:
+        print("Activity not found.")
+        return
+
+    print(f"\nEditing: {activity['name']}")
+    print("Press Enter to keep the current value.")
+
+    name = input(f"Name [{activity['name']}]: ").strip()
+    start_time = input(
+        f"Start time [{activity['start_time'] or ''}]: "
+    ).strip()
+    location = input(
+        f"Location [{activity['location'] or ''}]: "
+    ).strip()
+    cost_text = input(
+        f"Estimated cost [{activity['estimated_cost']:.2f}]: "
+    ).strip()
+    notes = input(f"Notes [{activity['notes'] or ''}]: ").strip()
+
+    try:
+        estimated_cost = (
+            float(cost_text)
+            if cost_text
+            else activity["estimated_cost"]
+        )
+        if estimated_cost < 0:
+            raise ValueError
+    except ValueError:
+        print("Cost must be a non-negative number. No changes saved.")
+        return
+
+    updated_name = name or activity["name"]
+    updated_time = (
+        start_time if start_time else activity["start_time"]
+    )
+    updated_location = location or activity["location"]
+    updated_notes = notes or activity["notes"]
+
+    with connect_db() as connection:
+        connection.execute(
+            """
+            UPDATE activities
+            SET name = ?,
+                start_time = ?,
+                location = ?,
+                estimated_cost = ?,
+                notes = ?
+            WHERE id = ?
+            """,
+            (
+                updated_name,
+                updated_time,
+                updated_location,
+                estimated_cost,
+                updated_notes,
+                activity_id,
+            ),
+        )
+
+    print("Activity updated successfully.")
+
+
+def delete_activity():
+    try:
+        activity_id = int(input("Activity ID to delete: ").strip())
+    except ValueError:
+        print("Please enter a valid activity ID.")
+        return
+
+    with connect_db() as connection:
+        activity = connection.execute(
+            "SELECT id, name FROM activities WHERE id = ?",
+            (activity_id,),
+        ).fetchone()
+
+        if activity is None:
+            print("Activity not found.")
+            return
+
+        print(f"Activity: {activity['name']}")
+        confirmation = input("Delete this activity? (y/N): ").strip().lower()
+
+        if confirmation != "y":
+            print("Deletion cancelled.")
+            return
+
+        connection.execute(
+            "DELETE FROM activities WHERE id = ?",
+            (activity_id,),
+        )
+
+    print("Activity deleted successfully.")
+
+
 
 
 def main():
@@ -295,7 +408,9 @@ def main():
         print("2. List trips")
         print("3. View itinerary")
         print("4. Add activity")
-        print("5. Exit")
+        print("5. Edit activity")
+        print("6. Delete activity")
+        print("7. Exit")
 
         choice = input("Choose an option: ").strip()
 
@@ -308,10 +423,14 @@ def main():
         elif choice == "4":
             add_activity()
         elif choice == "5":
+            edit_activity()
+        elif choice == "6":
+            delete_activity()
+        elif choice == "7":
             print("Goodbye!")
             break
         else:
-            print("Invalid option. Please choose 1–5.")
+            print("Invalid option. Please choose 1–7.")
 
 if __name__ == "__main__":
     main()
